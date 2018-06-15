@@ -18,7 +18,7 @@ export default class Field extends Component {
   }
   static getDerivedStateFromProps(props, state) {
     const { _forms, name, type, value: _value } = props;
-    const { values } = _forms;
+    const { values, errors } = _forms;
     let value = values[name],
       input;
     switch (type) {
@@ -31,13 +31,31 @@ export default class Field extends Component {
           value: _value,
         };
         break;
+      case 'file':
+        input = {
+          value: value || void 0,
+        };
+        break;
       default:
         input = { value };
     }
     return {
       input,
+      error: errors[name],
     };
   }
+  validate = value => {
+    const {
+      _forms: { values },
+      validate,
+      name,
+    } = this.props;
+    let error = '';
+    if (isFun(validate)) {
+      error = validate(value, values, name);
+    }
+    return error;
+  };
   format = value => {
     const { format } = this.props;
     if (isFun(format)) {
@@ -68,31 +86,51 @@ export default class Field extends Component {
     const {
       _forms: { change },
       name,
+      onChange,
     } = this.props;
     let value = compose(
       this.normalize,
       this.getValue
     )(e);
+    if (isFun(onChange)) {
+      onChange(e);
+    }
     change(name, value);
+    this.value = value;
+  };
+  handleBlur = e => {
+    const {
+      _forms: { blur },
+      onBlur,
+    } = this.props;
+    if (isFun(onBlur)) {
+      onBlur(e);
+    }
+    blur();
   };
   render() {
-    const { component = 'input' } = this.props;
-    const { input } = this.state;
-    const { value = '', ...rest } = input;
+    const { component = 'input', format, normalize, _forms, ...props } = this.props;
+    const { input, error } = this.state;
+    let { value = '', ...rest } = input;
+
     if (typeof component === 'string') {
       return createElement(component, {
-        ...this.props,
+        ...props,
         ...rest,
+        error,
         value: this.format(value),
         onChange: this.handleChange,
+        onBlur: this.handleBlur,
         ref: this.saveRef,
       });
     } else {
       return createElement(component, {
+        ...props,
         input: {
           ...input,
           onChange: this.handleChange,
         },
+        ref: this.saveRef,
       });
     }
   }

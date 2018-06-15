@@ -1,62 +1,103 @@
 import { Component } from 'react';
 import FormContext from './createContext';
-import { getDisplayName } from './utils';
+import { getDisplayName, getValid, compose, isFun } from './utils';
 const createForm = (options = {}) => WrapComponent => {
   class FormContainer extends Component {
     constructor(props) {
       super(props);
-      const { initialValues = {} } = options;
+      const { initialValues = {}, trigger = 'change' } = options;
       this.state = {
         values: initialValues,
-        ...this._validate(initialValues),
+        trigger,
+        isValid: true,
+        errors: {},
+        _error: '',
       };
     }
-    _validate = values => {
-      const { validate } = options;
-      const { _error = false, ...errors } = (validate && validate(values)) || {};
+    _judgeError = errors => {
+      const { _error, ...rest } = errors;
+      const isValid = !(Object.values(errors).length > 0);
       return {
-        errors,
+        isValid,
         _error,
+        errors: rest,
+      };
+    };
+
+    _check = values => {
+      const { validate } = options;
+      if (isFun(validate)) {
+        return compose(
+          this._judgeError,
+          validate
+        )(values);
+      }
+      return {
+        isValid: true,
+        errors: {},
+        _error: '',
       };
     };
     reset = () => {
       //重置数据为初始数据
       const { initialValues = {} } = options;
-      this._setValues(initialValues);
-    };
-    change = (name, value) => {
-      const { values } = this.state;
-      const { [name]: _, ...other } = values;
-      let nextValue;
-      // 判断value值是否为除boolean值之外的任何false值
-      if (value !== false && !value) {
-        nextValue = other;
-      } else {
-        nextValue = Object.assign({}, other, {
-          [name]: value,
-        });
-      }
-      this._setValues(nextValue);
-    };
-    _setValues = values => {
-      const { onChange } = options;
       this.setState({
-        values,
-        ...this._validate(values),
+        values: initialValues,
       });
-      onChange && onChange(values, this.props);
+    };
+    _editValues = key => (name, value) => {
+      const { [key]: _ } = this.state;
+      const obj = Object.assign({}, _, {
+        [name]: value,
+      });
+      return {
+        [key]: getValid(obj),
+      };
+    };
+    blur = () => {
+      const { trigger, values } = this.state;
+      if (trigger === 'blur') {
+        this.setState(this._check(values));
+      }
+    };
+    _change = (name, value) => {
+      const { onChange } = options;
+      const { trigger } = this.state;
+      const data = this._editValues('values')(name, value);
+      onChange && onChange(data['values'], this.props);
+      if (trigger === 'change') {
+        return {
+          ...data,
+          ...this._check(data['values']),
+        };
+      }
+      return {
+        ...data,
+      };
     };
     render() {
-      const { values } = this.state;
+      const { values, errors } = this.state;
+      const setState = this.setState.bind(this);
       const formControl = {
         reset: this.reset,
-        change: this.change,
+        change: compose(
+          setState,
+          this._change
+        ),
+        setError: compose(
+          setState,
+          this._judgeError,
+          ({ errors }) => errors,
+          this._editValues('errors')
+        ),
+        blur: this.blur,
       };
       return (
         <FormContext.Provider
           value={{
             values,
-            change: this.change,
+            errors,
+            ...formControl,
           }}
         >
           <WrapComponent {...this.props} {...formControl} />
